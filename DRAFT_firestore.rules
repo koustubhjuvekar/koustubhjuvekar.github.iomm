@@ -1,0 +1,138 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net: Default-Deny Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reusable Hardened Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isBootstrappedAdminEmail() {
+      return isVerifiedUser() && (
+        request.auth.token.email == 'koustubhjuvekar2000@gmail.com' ||
+        request.auth.token.email == 'koustubhjuvekarofficial@gmail.com'
+      );
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        isBootstrappedAdminEmail()
+      );
+    }
+
+    // Validation Blueprint: AdminConfig
+    function isValidAdminConfig(data) {
+      return data.keys().hasAll(['ownerId', 'username', 'passwordHash', 'email', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['ownerId', 'username', 'passwordHash', 'email', 'createdAt', 'updatedAt']) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 && data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.ownerId == request.auth.uid &&
+        data.username is string && data.username.size() >= 3 && data.username.size() <= 64 &&
+        data.passwordHash is string && data.passwordHash.size() >= 16 && data.passwordHash.size() <= 128 &&
+        data.email is string && data.email.size() >= 5 && data.email.size() <= 128 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // Validation Blueprint: AdminOtp
+    function isValidAdminOtp(data) {
+      return data.keys().hasAll(['ownerId', 'email', 'otpHash', 'status', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['ownerId', 'email', 'otpHash', 'status', 'createdAt', 'updatedAt']) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 && data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.ownerId == request.auth.uid &&
+        data.email is string && data.email.size() >= 5 && data.email.size() <= 128 &&
+        data.otpHash is string && data.otpHash.size() >= 16 && data.otpHash.size() <= 128 &&
+        data.status is string && (data.status == 'pending' || data.status == 'verified' || data.status == 'expired') &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // Collection: /admins/{adminId}
+    match /admins/{adminId} {
+      allow get: if isVerifiedUser() && isValidId(adminId) && (
+        request.auth.uid == adminId || isAdmin()
+      );
+
+      allow list: if isVerifiedUser() && existing().ownerId == request.auth.uid;
+
+      allow create: if isVerifiedUser() &&
+        isValidId(adminId) &&
+        request.auth.uid == adminId &&
+        isValidAdminConfig(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isBootstrappedAdminEmail();
+
+      allow update: if isVerifiedUser() &&
+        isValidId(adminId) &&
+        isValidAdminConfig(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() ||
+          (
+            request.auth.uid == adminId &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['username', 'passwordHash', 'email', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isVerifiedUser() && isValidId(adminId) && isAdmin();
+    }
+
+    // Collection: /admin_otps/{otpId}
+    match /admin_otps/{otpId} {
+      allow get: if isVerifiedUser() && isValidId(otpId) && (
+        existing().ownerId == request.auth.uid || isAdmin()
+      );
+
+      allow list: if isVerifiedUser() && existing().ownerId == request.auth.uid;
+
+      allow create: if isVerifiedUser() &&
+        isValidId(otpId) &&
+        isValidAdminOtp(incoming()) &&
+        incoming().status == 'pending' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/admins/$(incoming().ownerId));
+
+      allow update: if isVerifiedUser() &&
+        isValidId(otpId) &&
+        isValidAdminOtp(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() ||
+          (
+            existing().ownerId == request.auth.uid &&
+            existing().status == 'pending' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isVerifiedUser() && isValidId(otpId) && (
+        existing().ownerId == request.auth.uid || isAdmin()
+      );
+    }
+  }
+}

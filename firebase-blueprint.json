@@ -1,0 +1,101 @@
+{
+  "entities": {
+    "AdminConfig": {
+      "title": "AdminConfig",
+      "description": "Stores admin credentials metadata and password hash for portfolio administration.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "The authenticated Firebase UID of the admin.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "username": {
+          "type": "string",
+          "description": "Admin login username.",
+          "minLength": 3,
+          "maxLength": 64
+        },
+        "passwordHash": {
+          "type": "string",
+          "description": "SHA-256 hash of the admin password.",
+          "minLength": 16,
+          "maxLength": 128
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Verified admin email for OTP recovery and password change.",
+          "minLength": 5,
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the admin record was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the admin password was last updated."
+        }
+      },
+      "required": ["ownerId", "username", "passwordHash", "email", "createdAt", "updatedAt"]
+    },
+    "AdminOtp": {
+      "title": "AdminOtp",
+      "description": "Stores single-use email OTP verification challenges for changing admin password.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "The authenticated Firebase UID requesting the OTP.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Target email address for the OTP.",
+          "minLength": 5,
+          "maxLength": 128
+        },
+        "otpHash": {
+          "type": "string",
+          "description": "SHA-256 hash of the 6-digit OTP code.",
+          "minLength": 16,
+          "maxLength": 128
+        },
+        "status": {
+          "type": "string",
+          "description": "Lifecycle status of the OTP challenge.",
+          "enum": ["pending", "verified", "expired"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the OTP was issued."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the OTP was last updated."
+        }
+      },
+      "required": ["ownerId", "email", "otpHash", "status", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminConfig" },
+      "description": "Stores the admin credential configuration keyed by the admin user UID."
+    },
+    "/admin_otps/{otpId}": {
+      "schema": { "$ref": "#/entities/AdminOtp" },
+      "description": "Stores email OTP verification challenges for admin password updates."
+    }
+  }
+}
